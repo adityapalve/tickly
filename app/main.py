@@ -1,8 +1,20 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException
 import validators
-from . import schemas
+from . import schemas, models
+import secrets
+from sqlalchemy import Session
+from .database import SessionLocal, engine
 
 app = FastAPI()
+models.Base.metadata.create_all(bind=engine)
+
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
 """
 API Endpoints
 - / GET
@@ -11,6 +23,7 @@ API Endpoints
 - /admin/{secret_key} GET
 - /admin/{secret_key} DELETE
 """
+
 @app.get("/")
 def read_root():
     return "Welcome to the URL shortener API"
@@ -19,9 +32,20 @@ def raise_bad_request(message: str):
     raise HTTPException(status_code=400, detail=message)
 
 
-@app.post("/url")
+@app.post("/url", response_model=schemas.URLInfo)
 def create_url(url: schemas.BaseURL):
     if not validators.url(url.target_url):
         raise_bad_request(message="The provided URL is invalid")
-    return f"TODO: Create db entry for {url.target_url}"
+    chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+    key = "".join(secrets.choice(chars) for i in range(5))
+    secret_key = "".join(secrets.choice(chars) for i in range(8))
+    db_url = models.URL(
+        target_url = url.target_url, key=key, secret_key=secret_key
+    )
+    db.add(db_url)
+    db.commit()
+    db.refresh(db_url)
+    db_url.url = key
+    db_url.admin_url = secret_key
+    return db_url
 
