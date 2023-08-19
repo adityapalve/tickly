@@ -1,4 +1,5 @@
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi.responses import RedirectResponse
 import validators
 from . import schemas, models
 import secrets
@@ -14,6 +15,10 @@ def get_db():
         yield db
     finally:
         db.close()
+
+def raise_not_found(request):
+    message = f"Url {request.url} does not exist"
+    raise HTTPException(status_code=404, detail=message)
 
 """
 API Endpoints
@@ -49,3 +54,14 @@ def create_url(url: schemas.BaseURL):
     db_url.admin_url = secret_key
     return db_url
 
+@app.get("/{url_key}")
+def forward_to_target_url(
+    url_key:str,
+    request: Request,
+    db: Session = Depends(get_db)
+):
+    db_url = db.query(models.URL).filter(models.URL.key == url_key).first()
+    if not db_url:
+        return RedirectResponse(db_url.target_url)
+    else:
+        raise_not_found(request)
